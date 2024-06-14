@@ -1,0 +1,42 @@
+\documentclass{report}
+\usepackage{graphicx}
+\usepackage[greek]{babel}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\graphicspath{{images/}}
+\usepackage{subfiles}
+
+\title{
+    {Διαδικτυακή εφαρμογή για τον δυναμικό συνεπιβατισμό μεταφορικών μέσων}\\
+    {\large Εθνικό Μετσόβιο Πολυτεχνείο}
+}
+\author{Ευστράτιος Γιακουμάκης}
+\date{1η Σεπτεμβρίου 2024}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\chapter{Introduction}
+
+\chapter{Flutter}
+\subfile{chapters/flutter.tex}
+
+\chapter{Javascript}
+\subfile{chapters/javascript.tex}
+
+\chapter{Websocket}
+
+\chapter{Frontend}
+\subfile{chapters/app.tex}
+
+\chapter{Backend}
+\subfile{chapters/server.tex}
+
+\appendix
+\chapter{Συμπληρωματικό υλικό}
+\subfile{chapters/appendix.tex}
+
+\end{document}
