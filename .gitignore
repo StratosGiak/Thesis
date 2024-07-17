@@ -1,6 +1,11 @@
-*.log
-*.toc
-*.aux
-*.synctex.gz
+*
+!*/
 
+!chapters/*
+!images/*
+!thesis.tex
+!thesis.pdf
+!bibliography.bib
+
+!.gitignore
 .vscode
