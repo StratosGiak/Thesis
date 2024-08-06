@@ -1,11 +1,8 @@
-*
-!*/
+/*
 
-!chapters/*
-!images/*
+!chapters/
+!images/
 !thesis.tex
 !thesis.pdf
 !bibliography.bib
-
 !.gitignore
-.vscode
