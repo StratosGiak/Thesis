@@ -1,0 +1,299 @@
+\documentclass[../thesis.tex]{subfiles}
+
+\begin{document}
+
+Τώρα θα αναλύσουμε τον κώδικα του κεντρικού server που συντονίζει την επικοινωνία οδηγών και επιβατών.
+
+Καθ'όλη τη λειτουργία του server θα χρειάζεται να αναφερόμαστε σε χρήστες και να προσπελάζουμε τα στοιχεία τους δεδομένου του αριθμού μητρώου τους.
+Για αυτόν τον λόγο δημιουργούμε τις παρακάτω associative arrays με κλειδιά τους ΑΜ των χρηστών.
+Η \verb|socketArray| περιέχει τις συνδέσεις WebSocket των χρηστών, και είναι απαραίτητη για να μπορούμε να στέλνουμε μηνύματα σε αυθαίρετους χρήστες.
+Οι \verb|driverArray| και \verb|passengerArray| περιέχουν τους τρέχοντες οδηγούς και πεζούς αντίστοιχα. 
+
+\begin{codeblock}{typescript}
+  let socketArray = new Map<string, WebSocket>();
+  let driverArray = new Map<string, Driver>();
+  let passengerArray = new Map<string, Passenger>();
+\end{codeblock}
+
+Το πρώτο βήμα είναι η δημιουργία του WebSocket server ο οποίος θα ανταποκρίνεται στα αιτήματα των χρηστών.
+Δεδομένου ότι επιθυμούμε η ταυτοποίηση του κάθε χρήστη να γίνεται \textit{πριν} από την έναρξη της σύνδεσης, χρειάζεται να ορίσουμε έναν κλασσικό HTTP server ο οποίος θα δεχτεί το αρχικό αίτημα και θα ανοίξει τη σύνδεση WebSocket μόνο αν η ταυτοποίηση είναι επιτυχής.
+
+\begin{codeblock}{typescript}{api.ts}
+  const httpServer = createServer();
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", async (req, socket, head) => {
+    let credentials = await authenticate(req);
+    if (!credentials) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      loggerMain.warn("Error authenticating user");
+      return;
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req, credentials);
+    });
+  });  
+
+  httpServer.listen(env.API_PORT);
+\end{codeblock}
+
+Ο \verb|httpServer| δέχεται upgrade requests προς WebSocket και εκτελεί την ταυτοποίηση μέσω της \verb|authenticate|.
+Αν η ταυτοποίηση αποτύχει τότε η σύνδεση διακόπτεται αμέσως, διαφορετικά ο χρήστης συνδέεται με τον WebSocket server.
+
+Μόλις ανοίξει μία σύνδεση με τον WebSocket server τότε ο server εκτελεί μερικές ακόμα προκαταρκτικές ενέργειες πριν αρχίσει να ανταποκρίνεται στα μηνύματα του χρήστη:
+
+\begin{codeblock}{typescript}{api.ts}
+  wss.on(
+    "connection",
+    async (ws, req, credentials) => {
+      if (socketArray[credentials.id]) {
+        loggerMain.warn(
+          `User \${credentials.id} tried to connect while already connected`
+        );
+        ws.close(4001, "user already connected");
+        return;
+      }
+      let user = await getUser(credentials.id);
+      if (!user) {
+        loggerMain.info(
+          `User \${credentials.id} not found. Creating new user...`
+        );
+        user = await createUser(credentials.id);
+        if (!user) {
+          loggerMain.warn(`Cannot create new user \${credentials.id}`);
+          ws.close(4002, "cannot create user");
+          return;
+        }
+      }
+      user.full_name = credentials.full_name;
+      socketArray[user.id] = ws;
+      ws.send(msgToJSON(typeOfMessage.login, user));
+      loggerMain.info(`User logged in: \${user}`);
+
+      ws.on("message", (message) => handleMessage(message, ws));
+    }
+  );
+\end{codeblock}
+
+Αφού ελέγξουμε ότι ο χρήστης δεν είναι ήδη συνδεδεμένος, προσπαθούμε να ανακτήσουμε τα στοιχεία του από τη βάση δεδομένων.
+Αν ο χρήστης δεν υπάρχει στη βάση (δηλαδή συνδέεται για πρώτη φορά) τότε δημιουργούμε νέο προφίλ.
+Αφού προσθέσουμε τον χρήστη στη λίστα των συνδέσεων για εύκολη πρόσβαση, του στέλνουμε τα στοιχεία του που είναι αποθηκευμένα στη βάση, και θέτουμε τον message handler ώστε να ανταποκρίνεται στα μηνύματά του.
+
+Μόλις λάβουμε κάποιο μήνυμα αρχικά πραγματοποιούμε validation για να εξασφαλίσουμε ότι είναι well-formed, και έπειτα εξετάζουμε τον τύπο του προκειμένου να αποφανθούμε για πως θα το επεξεργαστούμε.
+
+\begin{codeblock}{typescript}{handleMessage}
+  async function handleMessage(message: string, ws: WebSocket) {
+    if(!validateMessage(message)) return;
+    const { type, data } = JSON.parse(message);
+    switch (type) {
+      case typeOfMessage.newDriver: {
+        driverArray[user.id] = {
+          ...user,
+          coordinates: data.coordinates,
+          car: data.car,
+          candidates: [],
+          passengers: [],
+        };
+        loggerMain.info(`New driver: \${driverArray[user.id]}`);
+        break;
+      }
+      case typeOfMessage.newPassenger: {
+        passengerArray[user.id] = {
+          ...user,
+          coordinates: data.coordinates,
+        };
+        loggerMain.info(`New passenger: \${passengerArray[user.id]}`);
+        break;
+      }
+    }
+    case typeOfMessage.updateDriver: {
+      driverArray[user.id].coordinates = data.coordinates;
+      for (const passenger of driverArray[user.id].passengers) {
+        socketArray[passenger].send(
+          msgToJSON(typeOfMessage.updateDriver, driverArray[user.id])
+        );
+      }
+      loggerMain.info(`Updated driver: \${driverArray[user.id]}`);
+      break;
+    }
+    case typeOfMessage.updatePassenger: {
+      passengerArray[user.id].coordinates = data.coordinates;
+      const driver = passengerArray[user.id].driver_id;
+      if (driver) {
+        socketArray[driver].send(
+          msgToJSON(typeOfMessage.updatePassenger, passengerArray[user.id])
+        );
+      }
+      loggerMain.info(`Updated passenger: \${passengerArray[user.id]}`);
+      break;
+    }
+  }
+\end{codeblock}
+
+Στην περίπτωση που το μήνυμα αφορά την άφιξη ενός νέου οδηγού ή πεζού, τότε ο χρήστης απλά προστίθεται στην αντίστοιχη λίστα μαζί με τις συντεταγμένες του όπως φαίνεται παραπάνω.
+Όταν ο χρήστης στέλνει μήνυμα ανανέωσης της τοποθεσίας του, τότε ο server ενημερώνει τις συντεταγμένες του. Επιπλέον, αν πρόκειται για οδηγό, πληροφορούνται όλοι οι επιβάτες στο όχημα του χρήστη για τη νέα θέση του, ενώ αν πρόκειται για επιβάτη ενημερώνεται ο οδηγός του.
+
+Ακολουθούν τα μηνύματα που αφορούν το ταίριασμα οδηγών με τους επιβάτες τους.
+Το μήνυμα τύπου \verb|pingPassengers| στέλνεται από τον οδηγό που επιθυμεί να παραλάβει πεζούς, ενώ το \verb|pingDriver| στέλνεται από τους επιλεγμένους πεζούς ως απάντηση στο αίτημα του οδηγού.
+
+\begin{codeblock}{typescript}{handleMessage}
+  case typeOfMessage.pingPassengers: {
+    driverArray[user.id].candidates = sampleSize(passengerArray, 5);
+    for (const id of driverArray[user.id].candidates) {
+      passengerArray[id].driver_id = user.id;
+      socketArray[id].send(
+        msgToJSON(typeOfMessage.pingPassengers, user.id)
+      );
+    }
+    loggerMain.info(
+      `Driver \${user.id} pinged passengers \${
+        driverArray[user.id].candidates
+      }`
+    );
+    break;
+  }
+  case typeOfMessage.pingDriver: {
+    const driver_id = passengerArray[user.id].driver_id;
+    remove(
+      driverArray[driver_id].candidates,
+      (passenger) => passenger == user.id
+    );
+    if (data.refused) {
+      delete passengerArray[user.id].driver_id;
+      loggerMain.info(`Passenger \${user.id} refused driver \${driver_id}`);
+      break;
+    }
+    if (
+      driverArray[driver_id].passengers.length >=
+      driverArray[driver_id].car.seats
+    ) {
+      ws.send(msgToJSON(typeOfMessage.pingDriver, null));
+      delete passengerArray[user.id].driver_id;
+      break;
+    }
+    driverArray[driver_id].passengers.push(user.id);
+    ws.send(msgToJSON(typeOfMessage.pingDriver, driverArray[driver_id]));
+    socketArray[driver_id].send(
+      msgToJSON(typeOfMessage.updatePassenger, passengerArray[user.id])
+    );
+    loggerMain.info(`Passenger \${user.id} paired with driver \${driver_id}`);
+    break;
+  }
+\end{codeblock}
+
+Όταν δεχόμαστε μήνυμα \verb|pingPassengers| από έναν οδηγό, επιλέγουμε τυχαία 5 χρήστες από τη λίστα των πεζών και τους αναθέτουμε προσωρινά ως υποψήφιους επιβάτες.
+Αφού ενημερώσουμε τους επιλεγμένους πεζούς για τον υποψήφιο οδηγό τους, αναμένουμε την απάντησή τους μέσα από μήνυμα τύπου \verb|pingDriver|.
+Αφού δεχτούμε την απάντηση ενός δεδομένου πεζού, τον αφαιρούμε από τη λίστα των υποψήφιων επιβατών και ελέγχουμε αν το αίτημα έγινε αποδεκτό ή απορρίφθηκε.
+Αν ο πεζός αποδέχτηκε το αίτημα του οδηγού τότε ελέγχουμε αν υπάρχουν διαθέσιμες θέσεις στο όχημα, και αν όχι, ενημερώνουμε τον πεζό για την έλλειψη θέσεων.
+Διαφορετικά, ο πεζός προστίθεται στη λίστα των επιβατών του οδηγού, και πλέον επιβάτης και οδηγός θα ενημερώνονται ο ένας για την τοποθεσία του άλλου.
+
+Αν για οποιονδήποτε λόγο ο χρήστης αποφασίσει να διακόψει τη διαδρομή του, τότε στέλνεται το αντίστοιχο μήνυμα παύσης.
+Εκτός από την αφαίρεση του χρήστη από την αντίστοιχη λίστα \verb|driverArray|/\verb|passengerArray|, στην περίπτωση εξόδου του οδηγού ενημερώνουμε όλους τους επιβάτες του, ενώ στην περίπτωση εξόδου ενός επιβάτη ενημερώνουμε τον οδηγό του.
+
+\begin{codeblock}{typescript}{handleMessage}
+  case typeOfMessage.stopDriver: {
+    for (const passenger of driverArray[id].passengers){
+      delete passengerArray[passenger].driver_id;
+      socketArray[passenger].send(msgToJSON(typeOfMessage.updateDriver, null));
+    }
+    delete driverArray[id];
+    loggerMain.info(`Stopped driver \${user.id}`);
+    break;
+  }
+  case typeOfMessage.stopPassenger: {
+    if (passengerArray[id].driver_id) {
+      socketArray[passengerArray[id].driver_id].send(
+        msgToJSON(typeOfMessage.updatePassenger, { cancelled: id })
+      );
+      remove(
+        driverArray[passengerArray[id].driver_id].passengers,
+        (passenger) => passenger == id
+      );
+    }
+    delete passengerArray[id];
+    loggerMain.info(`Stopped passenger \${user.id}`);
+    break;
+  }
+\end{codeblock}
+
+Το τελευταίο στάδιο της διαδρομής είναι η άφιξη στον προορισμό και η αποστολή των αξιολογήσεων: 
+
+\begin{codeblock}{typescript}{handleMessage}
+  case typeOfMessage.arrivedDestination: {
+    for (const passenger of driverArray[user.id].passengers) {
+      socketArray[passenger].send(
+        msgToJSON(typeOfMessage.arrivedDestination, null)
+      );
+      pendingRatings[passenger] = [user.id];
+    }
+    pendingRatings[user.id] = driverArray[user.id].passengers;
+    loggerMain.info(
+      `Driver \${user.id} arrived at destination with passengers \${
+        driverArray[user.id].passengers
+      }`
+    );
+    break;
+  }
+  case typeOfMessage.sendRatings: {
+    for (const {id, rating} of data) {
+      if(remove(pendingRatings[user.id], (e) => e == id).length == 0) continue;
+      if (rating == 0) continue;
+      addUserRating(id, rating);
+      loggerMain.info(
+        `User \${user.id} rated user \${id} with \${rating} stars`
+      );
+    }
+    break;
+  }
+\end{codeblock}
+
+Μόλις ο οδηγός φτάσει στον προορισμό στέλνει το μήνυμα \verb|arrivedDestination| στον server, ο οποίος με τη σειρά του ενημερώνει όλους τους επιβάτες για την άφιξη.
+Ταυτόχρονα ορίζουμε μέσω της λίστας \verb|pendingRatings| το ποιοι χρήστες μπορούν να αξιολογήσουν ποιους.\footnote{Αυτό χρειάζεται για να εξασφαλίσουμε ότι οι αξιολογήσεις είναι γνήσιες και γίνονται μετά από την περάτωση μίας διαδρομής. Διαφορετικά ο κάθε χρήστης θα μπορούσε να στείλει αξιολογήσεις σε οποιονδήποτε άλλο χρήστη, χωρίς να έχει συμμετάσχει σε κάποια διαδρομή}
+Μόλις ληφθεί ένα μήνυμα που περιέχει τις αξιολογήσεις χρηστών, ελέγχεται πρώτα η εγκυρότητά του, και έπειτα ενημερώνονται οι αντίστοιχες βαθμολογίες στην βάση δεδομένων.
+
+Τέλος, έχουμε δύο τύπους μηνυμάτων που αφορούν την δημιουργία οχήματος και την μεταφόρτωση εικόνας προφίλ:
+
+\begin{codeblock}{typescript}{handleMessage}
+  case typeOfMessage.updateUserPicture: {
+    let newPicture = await updateUserPicture(user.id, data);
+    loggerMain.info(`Updated profile picture of \${user.id} to \${newPicture}`);
+    if (user.picture) deletePicture(user.picture);
+    user.picture = newPicture;
+    ws.send(msgToJSON(typeOfMessage.updateUserPicture, newPicture));
+
+    const resultNSFW = await isNSFW(newPicture);
+    if (!resultNSFW) return;
+    deleteUserPicture(newPicture);
+    updateUserPicture(user.id, null);
+    socketArray[user.id].send(
+      msgToJSON(typeOfMessage.deleteUserPicture, picture)
+    );
+    break;
+  }
+  case typeOfMessage.addCar: {
+    const car = await createCar(user.id, data);
+    loggerMain.info(`Added car to \${user.id}: \${car}`);
+    user.cars[car.id] = car;
+    ws.send(msgToJSON(typeOfMessage.addCar, car));
+
+    if (!car.picture) break;
+    const resultNSFW = await isNSFW(car.picture);
+    if (!resultNSFW) return;
+    deleteCarPicture(car.picture);
+    updateCarPicture(user.id, null);
+    socketArray[user.id].send(
+      msgToJSON(typeOfMessage.deleteCarPicture, {id: car.id, picture: picture})
+    );
+    break;
+  }
+\end{codeblock}
+
+Για την αλλαγή εικόνας προφίλ, έχει ήδη προηγηθεί η μεταφόρτωση της εικόνας από τον χρήστη στον ειδικό server πολυμέσων.
+Μέσω του μήνυματος \verb|updateUserPicture| ο χρήστης στέλνει μόνο το όνομα του αρχείου, ώστε ο server να ανανεώσει την φωτογραφία στην βάση δεδομένων.
+Η νέα φωτογραφία ελέγχεται από το φίλτρο καταλληλότητας, και αν διαπιστωθεί ότι περιέχει ακατάλληλο περιεχόμενο τότε διαγράφεται αμέσως από τον server και στέλνεται μήνυμα το οποίο ενημερώνει τον χρήστη για τον λόγο της διαγραφής.
+
+Παρόμοια διαδικασία πραγματοποιείται για την προσθήκη ενός νέου οχήματος από τον χρήστη.
+
+\end{document}
