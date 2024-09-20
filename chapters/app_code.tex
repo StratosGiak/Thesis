@@ -1,0 +1,806 @@
+\documentclass[../thesis.tex]{subfiles}
+
+\begin{document}
+
+Σε αυτό το σημείο θα αναλύσουμε τον κώδικα της εφαρμογής.
+Ορισμένα σημεία παρουσιάζονται τροποποιημένα για λόγους απλούστευσης.
+
+Το entry-point της εφαρμογής είναι η συνάρτηση \verb|main|.
+Στη main αρχικοποιούμε ότι ρυθμίσεις χρειάζονται, και έπειτα εκκινούμε την εφαρμογή μέσω της συνάρτησης \verb|runApp|.
+
+\begin{codeblock}{dart}{main.dart}
+  void main() {
+    runApp(const RidehailingApp());
+  }
+  class RidehailingApp extends StatelessWidget {
+    const RidehailingApp({super.key});
+
+    @override
+    Widget build(BuildContext context) {
+      return MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => User()),
+          ChangeNotifierProvider(create: (_) => SocketConnection()),
+          ChangeNotifierProvider(create: (_) => Authenticator())
+        ],
+        child: MaterialApp(
+          title: 'NTUA-Ridehailing',
+          theme: ThemeData(
+            colorSchemeSeed: Colors.blue,
+            useMaterial3: true,
+          ),
+          home: const WelcomePage(),
+        ),
+      );
+    }
+  }
+\end{codeblock}
+
+Η runApp δέχεται ένα widget το οποίο θα αποτελέσει τη "ρίζα" του widget tree της εφαρμογής.
+Στην περίπτωσή μας η ρίζα είναι ένα \verb|MaterialApp|, το οποίο αποτελεί ένα βασικό wrapper widget που περιέχει έτοιμες τις κύριες λειτουργίες που χρειάζεται η εφαρμογή, όπως themes, animations και navigation, σύμφωνα με τις προδιαγραφές  Material Design της Google.
+Εναλλακτικά η runApp μπορεί να δεχτεί ένα \verb|CupertinoApp| widget για τη δημιουργία εφαρμογής που ακολουθεί τα πρότυπα της Apple.
+
+Το MaterialApp με τη σειρά του περιέχει στην παράμετρο \verb|home| την αρχική οθόνη της εφαρμογής που θα εμφανιστεί κατά την εκκίνηση, η οποία στην περίπτωσή μας είναι η \verb|WelcomePage|.
+
+Παρατηρούμε επίσης ότι το MaterialApp είναι εμφωλευμένο σε ένα widget \verb|MultiProvider|.
+Αυτό το widget παρέχει τα στοιχεία του χρήστη που περιέχονται στην κλάση User σε όλα τα widgets της εφαρμογής που τα χρειάζονται.
+Χρειαζόμαστε αυτόν τον Provider καθώς πολλά διαφορετικά widget σε όλα τα routes της εφαρμογής εμφανίζουν κάποιο στοιχείο του χρήστη, και όλα αυτά τα widgets πρέπει να ενημερωθούν τη στιγμή που υπάρξει κάποια αλλαγή στα στοιχεία αυτά ώστε να μην παρουσιάζονται ποτέ stale δεδομένα.
+Για παράδειγμα, όλα τα routes της εφαρμογής εμφανίζουν στο app bar την εικόνα προφίλ του συνδεδεμένου χρήστη, και μόλις ο χρήστης αλλάξει την εικόνα προφίλ του όλα αυτά τα widget πρέπει αμέσως να ενημερωθούν με την καινούρια εικόνα.
+Τοποθετώντας τον Provider στη ρίζα του widget tree εξασφαλίζουμε ότι όλα τα widgets της εφαρμογής θα έχουν εύκολη πρόσβαση στην κλάση User.
+
+Εκτός από την κλάση User, ο provider παρέχει επίσης τις κλάσεις SocketConnection και Authenticator, οι οποίες χειρίζονται τη σύνδεση WebSocket με τον server και την ταυτοποίηση του χρήστη.
+Τα δύο αυτά μέρη περιγράφονται στο συμπληρωματικό υλικό\hyperref[sec:authentication].
+
+\begin{codeblock}{dart}{welcome.dart}
+  class WelcomePage extends StatefulWidget {
+    const WelcomePage({super.key});
+  
+    @override
+    State<WelcomePage> createState() => _WelcomePageState();
+  }
+
+  class _WelcomePageState extends State<WelcomePage> {
+
+    @override
+    Widget build(BuildContext context) {
+      return Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              ...
+            ],
+          ),
+        ),
+      );
+    }
+  }
+\end{codeblock}
+
+Η αρχική οθόνη της εφαρμογής είναι και αυτή ένα widget, και για την ακρίβεια ένα \verb|StatefulWidget|.
+Όπως και οι περισσότερες οθόνες της εφαρμογής, το WelcomePage widget περιέχει στοιχεία UI που αλλάζουν την εμφάνισή τους ανάλογα με την κατάσταση του, επομένως πρέπει να φέρει το δικό του ephemeral state.
+Η βάση του WelcomePage είναι ένα Scaffold, το οποίο αποτελεί widget-υπόβαθρο για το υπόλοιπο layout της οθόνης.
+
+Το Scaffold περιέχει μία στήλη από τα παρακάτω widgets:
+
+\begin{codeblock}{dart}{welcome.dart/children}
+  IconButton(
+    icon: const Icon(Icons.feedback_outlined),
+    iconSize: 30,
+    onPressed: showFeedbackDialog,
+  ),
+
+  Consumer<SocketConnection>(
+    builder: (socket) => Visibility(
+      visible: socket.status == SocketStatus.connected,
+      child: const UserAvatarButton(),
+    ),
+  ),
+
+  const Text(
+    'NTUA Ridehailing',
+    style: TextStyle(fontSize: 50, fontWeight: FontWeight.w900),
+  ),
+
+  Consumer2<SocketConnection, User>(
+    builder: (socket, user) {
+      String displayText;
+      if (socket.status == SocketStatus.disconnected) {
+        displayText = 'Log in';
+      } else if (socket.status == SocketStatus.connecting ||
+          user.givenName.isEmpty) {
+        displayText = 'Connecting...';
+      } else {
+        displayText = 'Logged in as \${user.givenName}';
+      }
+      return TextButton(
+        onPressed: socket.status == SocketStatus.disconnected
+            ? _connectToServer
+            : null,
+        child: Text(
+          displayText,
+          style: const TextStyle(fontSize: 30),
+          textAlign: TextAlign.center,
+        ),
+      );
+    },
+  ),
+
+  Consumer<SocketConnection>(
+    builder: (socket) => Visibility(
+      visible: socket.status != SocketStatus.connected,
+      child: const Text('You must be logged in to use the app'),
+    ),
+  ),
+
+  Consumer<SocketConnection>(
+    builder: (context, socket, child) => Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        SubtitledButton(
+          icon: const Icon(Icons.directions_car),
+          subtitle: const Text('I am a driver'),
+          onPressed: socket.status == SocketStatus.connected
+              ? () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DriverPage(),
+                ),
+              )
+              : null,
+        ),
+        SubtitledButton(
+          icon: const Icon(Icons.directions_walk),
+          subtitle: const Text('I am a passenger'),
+          onPressed: socket.status == SocketStatus.connected
+              ? () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PassengerPage(),
+                ),
+              )
+              : null,
+        ),
+      ],
+    ),
+  ),
+
+  Consumer<SocketConnection>(
+    builder: (socket) => Visibility(
+      visible: socket.status == SocketStatus.connected,
+      child: TextButton(
+        onPressed: () async {
+          final reply = await signOutAlert(context: context);
+          if (reply) socket.setStatus(SocketStatus.disconnected);
+        },
+        child: const Text('Sign out', style: TextStyle(fontSize: 25)),
+      ),
+    ),
+  ),
+\end{codeblock}
+
+Παρατηρούμε ότι τα περισσότερα widgets βρίσκονται μέσα σε ένα widget \verb|Consumer|.
+Αυτά είναι εκείνα ακριβώς τα widgets της οθόνης τα οποία πρέπει να ενημερώνονται αμέσως όταν υπάρξουν μεταβολές στους providers \verb|SocketConnection| ή \verb|User|.
+Για παράδειγμα, το τελευταίο widget στη λίστα είναι ένα κουμπί που επιτρέπει στον χρήστη να αποσυνδεθεί από τον λογαριασμό του, και για ευνόητους λόγους επιθυμούμε να είναι εμφανές μόνο εφόσον ο χρήστης είναι ήδη συνδεδεμένος.
+Για αυτόν τον λόγο το widget περικλείεται από ένα Visibility το οποίο ελέγχει την ορατότητα του.
+Προκειμένου όμως η ορατότητα του widget να αλλάζει δυναμικά σύμφωνα με την κατάσταση της σύνδεσης, περικλείουμε επιπλέον το Visibility με έναν Consumer ο οποίος "ακούει" στο SocketConnection και ενημερώνει αναλόγως το Visibility.
+
+Τα σημαντικότερα μέρη της αρχικής οθόνης είναι το κουμπί σύνδεσης με τον server, και τα δύο κουμπιά για τη μετάβαση στην λειτουργία οδηγού/πεζού.
+
+Το κουμπί του login είναι ενεργοποιημένο εφόσον ο χρήστης δεν είναι ήδη συνδεδεμένος με τον server, και μόλις πατηθεί καλείται η συνάρτηση \verb|_connectToServer| η οποία πραγματοποιεί τη σύνδεση:
+
+\begin{codeblock}{dart}{welcome.dart/connectToServer}
+  void _connectToServer() async {
+    final socket = context.read<SocketConnection>();
+    final idToken = await Authenticator.authenticate();
+    if (idToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(snackBarAuthenticationError);
+      return;
+    }
+    await socket.create(idToken);
+    if (socket.status != SocketStatus.connected) {
+      ScaffoldMessenger.of(context).showSnackBar(snackBarConnectionError);
+    }
+  }
+\end{codeblock}
+
+Δεδομένου ότι η σύνδεση με τον server απαιτεί ένα ID Token που ταυτοποιεί τον χρήστη ως φοιτητή της σχολής, πραγματοποιούμε αρχικά το authentication μέσω του AppAuth, και έπειτα δημιουργούμε μία νέα σύνδεση με τον server χρησιμοποιώντας το token που λάβαμε.
+Εάν αποτύχει είτε το authentication είτε η σύνδεση με τον server ειδοποιούμε τον χρήστη με το αντίστοιχο μήνυμα μορφής snack bar.
+
+Εφόσον η σύνδεση είναι επιτυχής, ο χρήστης μπορεί να θέσει την εφαρμογή σε λειτουργία πατώντας κάποιο από τα δύο κουμπιά οδηγού/πεζού, τα οποία θα τον μεταφέρουν σε μία νέα οθόνη, \verb|DriverPage| ή \verb|PassengerPage| αντίστοιχα.
+
+Θα εξετάσουμε αρχικά την οθόνη για τη λειτουργία πεζού.
+
+\begin{codeblock}{dart}{passenger.dart}
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Passenger'),
+        actions: [
+          SwitchModeButton(),
+          UserAvatarButton(),
+        ],
+      ),
+      body: driver == null
+          ? PassengerStatusScreen()
+          : MapScreen(),
+    );
+  }
+\end{codeblock}
+
+Η οθόνη του πεζού διαθέτει ένα App Bar στο άνω μέρος της οθόνης το οποίο έχει κουμπιά για την εναλλαγή της λειτουργίας από πεζό σε οδηγό, και για την προβολή του προφίλ του χρήστη.
+Αν ο πεζός αναζητάει οδηγό τότε το κύριο σώμα της οθόνης εμφανίζει την \verb|PassengerStatusScreen| η οποία πληροφορεί τον χρήστη για την κατάσταση της αναζήτησης.
+Μόλις ο πεζός δεχτεί έναν οδηγό τότε η οθόνη αλλάζει και εμφανίζει την \verb|MapScreen| στην οποία παρουσιάζεται ο χάρτης με την τοποθεσία του οδηγού.
+
+Ο πεζός επικοινωνεί συνεχώς με τον κεντρικό server, ανταλλάσσοντας μηνύματα σχετικά με την κατάστασή του.
+Επομένως, η εφαρμογή έχει προσδιορίσει μία συνάρτηση που δέχεται τα μηνύματα από τον server και εκτελεί τις απαραίτητες ενέργειες για την ενημέρωση των δεδομένων:
+
+\begin{codeblock}{dart}{passenger.dart/socketHandler}
+  void socketHandler(message) async {
+    final decoded = jsonDecode(message);
+    final type = decoded['type'];
+    final data = decoded['data'];
+    switch (type) {
+      case typePingPassengers:
+        HapticFeedback.heavyImpact();
+        _acceptDriverDialog();
+        break;
+      case typeUpdateDriver:
+        driver = data['driver'];
+        driverPositions.add(driver['coordinates']);
+        if (driverArrived) {
+          final driverDistance = Geolocator.distanceBetween(
+            driver['coordinates'],
+            myCoordinates,
+          );
+          if (driverDistance > maxSeperation) {
+            HapticFeedback.heavyImpact();
+            driver = null;
+            socketConnection
+              .channel
+              .add(jsonEncode({'type': typeOutOfRange, 'data': {}}));
+            break;
+          }
+        }
+        if (Geolocator.distanceBetween(driver['coordinates'], busStop) < 
+        arrivalRange && !driverArrived) {
+          HapticFeedback.heavyImpact();
+          driverArrived = true;
+          _showArrivedDialog();
+        }
+        break;
+      case typeArrivedDestination:
+        HapticFeedback.heavyImpact();
+        await _showFinishDialog();
+        Navigator.popUntil(context, (route) => route.isFirst);
+        break;
+    }
+  }
+\end{codeblock}
+
+Η συνάρτηση socketHandler δέχεται το μήνυμα το οποίο είναι κωδικοποιημένο με τη μορφή JSON string, και αφού το αποκωδικοποιεί εξετάζει τον τύπο του και δρα αναλόγως.
+Το μήνυμα τύπου \verb|pingPassengers| στέλνεται όταν ο οδηγός ρωτά για τη διαθεσιμότητα των πεζών, επομένως μόλις η εφαρμογή το δεχτεί εμφανίζει στον χρήστη το παράθυρο αποδοχής του οδηγού.
+Όταν η εφαρμογή δέχεται μήνυμα \verb|updateDriver| το οποίο περιέχει νέα δεδομένα για τον οδηγό (πχ. την τοποθεσία του), τότε ενημερώνει την αντίστοιχη μεταβλητή.
+Αν ο οδηγός έχει μόλις φτάσει στη στάση όπου περιμένει ο πεζός τότε η εφαρμογή ειδοποιεί τον χρήστη μέσω του \verb|showArrivedDialog|.
+Επιπλέον, η εφαρμογή ελέγχει συνεχώς την απόσταση του οδηγού προκειμένου να διαπιστώσει αν ο οδηγός εγκατέλειψε τον πεζό, οπότε και ειδοποιεί τον server.
+Τέλος, η εφαρμογή μπορεί να δεχτεί μήνυμα \verb|arrivedAtDestination| το οποίο σηματοδοτεί την άφιξη του πεζού στη σχολή.
+Σε αυτή την περίπτωση εμφανίζεται το παράθυρο \verb|endRideDialog| το οποίο ειδοποιεί τον πεζό για την άφιξη στον προορισμό του και προσφέρει τη δυνατότητα αξιολόγησης του οδηγού.
+
+
+\begin{codeblock}{dart}{passenger.dart/MapScreen}
+  class MapScreen extends StatelessWidget {
+  const MapScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        FlutterMap(
+          children: [
+            TileLayer(
+              urlTemplate: mapUri,
+              tileBounds: LatLngBounds(
+                const LatLng(38.01304, 23.74121),
+                const LatLng(37.97043, 23.80078),
+              ),
+            ),
+            PolylineLayer(
+              polylines: [
+                Polyline(points: driverPositions),
+              ],
+            ),
+            MarkerLayer(
+              markers: [
+                Marker(point: myCoordinates),
+                Marker(point: driver['coordinates']), 
+              ],
+            ),
+            const SimpleAttributionWidget(
+              source: Text('OpenStreetMap contributors'),
+            ),
+          ],
+        ),
+        DriverInfoBox(driver: driver),
+      ]
+    );
+  }
+}
+\end{codeblock}
+
+Η MapScreen περιέχει τον χάρτη πάνω στον οποίο εμφανίζεται το στίγμα του πεζού και του οδηγού, καθώς και ένα πλαίσιο στο οποίο εμφανίζονται οι σχετικές πληροφορίες του οδηγού και του οχήματός του.
+Στον χάρτη εμφανίζεται επίσης μία τεθλασμένη γραμμή (polyline) τα σημεία της οποίας αποτελούν τις τοποθεσίες του οδηγού, έτσι ώστε ο χρήστης να μπορεί να δει την πορεία του οδηγού του να διαγράφεται σε πραγματικό χρόνο.
+
+\begin{codeblock}{dart}{passenger.dart/DriverInfoBox}
+  class DriverInfoBox extends StatelessWidget {
+    const DriverInfoBox({
+      super.key,
+      required this.driver,
+    });
+
+    final Map<String, dynamic> driver;
+
+    @override
+    Widget build(BuildContext context) {
+      return Container(
+        color: Colors.white,
+        child: Column(
+          children: Text(
+            'Driver',
+            style: TextStyle(fontSize: 20),
+            textAlign: TextAlign.center,
+          ),
+          ListTile(
+            leading: CachedNetworkImage(
+              imageUrl: "\$mediaHost/images/users/\${driver['picture']}",
+              placeholder: (context, url) => Image.asset(
+                'assets/images/blank_profile.png',
+              ),
+            )
+            tileColor: Colors.lightBlue,
+            title: Text(driver['full_name']),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RatingBarWithCount(driver['rating']),
+                Text("Model: \${driver['car']['model']}"),
+                Text("License plate: \${driver['car']['license']}"),
+                Row(
+                  children: [
+                    const Text('Color:'),
+                    ColorIndicator(
+                      hasBorder: true,
+                      height: 16,
+                      width: 50,
+                      color: Color(driver['car']['color']),
+                    ),
+                  ],
+                ),
+                Text("Distance: \${Geolocator.distanceBetween(
+                      driver["coordinates"],
+                      busStop)}m",
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+\end{codeblock}
+
+Το πλαίσιο πληροφοριών περιέχει τα στοιχεία του οδηγού που έχουμε αναφέρει και προηγουμένως, καθώς και την απόσταση του οδηγού από την στάση.
+
+Τώρα θα αναλύσουμε των κώδικα της οθόνης του οδηγού.
+
+\begin{codeblock}{dart}{driver.dart}
+  class DriverPage extends StatefulWidget {
+    const DriverPage({super.key});
+
+    @override
+    State<DriverPage> createState() => _DriverPageState();
+  }
+
+  class _DriverPageState extends State<DriverPage> {
+    Widget build(BuildContext context) {
+      Widget driverScreen;
+      if (!driving) {
+        driverScreen = CarListScreen(
+          carList: CarList(
+            selected: selectedCar,
+            onEditPressed: (id) => _editCar(id),
+          ),
+          onAddPressed: context.watch<User>().cars.length < 3
+              ? () => _createCar()
+              : null,
+        );
+      } else if (passengers.isEmpty) {
+        driverScreen = DriverStatusScreen();
+      } else {
+        driverScreen = MapScreen(
+          passengers: passengers,
+          coordinates: myCoordinates,
+        );
+      }
+
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Driver'),
+          actions: [
+            SwitchModeButton(),
+            UserAvatarButton(),
+          ],
+        ),
+        body: driverScreen,
+        floatingActionButton: Visibility(
+          visible: selectedCar.value != null && passengers.isEmpty,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: LargeFAB(
+              driving: driving,
+              onPressed: _toggleDriving,
+              tooltip: driving ? 'Stop driving' : 'Start driving',
+            ),
+          ),
+        ),
+      );
+    }
+  }
+\end{codeblock}
+
+Η οθόνη του οδηγού είναι όμοια με την οθόνη του πεζού, με τη διαφορά ότι προστίθεται η \verb|CarListScreen|, μία επιπλέον όψη που επιτρέπει στον χρήστη να επιλέξει το όχημά του πριν την έναρξη της διαδρομής.
+Η έναρξη της διαδρομής γίνεται μέσω του Floating Action Button (FAB) στο κάτω μέρος της οθόνης.
+Η \verb|CarListScreen| συγκεκριμένα περιέχει το widget \verb|CarList| το οποίο εμφανίζει τα οχήματα του χρήστη σε μία λίστα, επιτρέποντας την επιλογή, τροποποίηση και διαγραφή τους:
+
+\begin{codeblock}{dart}{driver.dart/CarList}
+  class CarList extends StatelessWidget {
+  const CarList({
+    super.key,
+    required this.selected,
+    required this.onEditPressed,
+  });
+
+  final ValueNotifier<String?> selected;
+  final Future<void> Function(String) onEditPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final cars = context.watch<User>().cars;
+    return ListView.separated(
+      shrinkWrap: true,
+      itemCount: cars.length,
+      itemBuilder: (context, index) {
+        return ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+          onTap: () => selected.value = index,
+          title: Text(cars[index].model),
+          subtitle: Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Seats: \${cars[index].seats}'),
+          ),
+          leading: Radio<String>(
+            value: index,
+            groupValue: selected.value,
+            onChanged: (value) => selected.value = value,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                onPressed: () => onEditPressed(index),
+                icon: const Icon(Icons.edit),
+                tooltip: 'Edit',
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete),
+                tooltip: 'Delete',
+                onPressed: () async {
+                  final reply = await showDeleteCarDialog(context);
+                  if (reply == true) {
+                    socket.channel.add(
+                      jsonEncode({
+                        'type': typeRemoveCar,
+                        'data': index,
+                      }),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+\end{codeblock}
+
+Έπειτα παρουσιάζουμε την συνάρτηση που επιτρέπει στον χρήστη να προσθέσει οχήματα στον λογαριασμό του:
+
+\begin{codeblock}{dart}{driver.dart/createCar}
+  Future<void> _createCar() async {
+    ValueNotifier<String?> picture;
+    ValueNotifier<Color?> color = ValueNotifier(null);
+    ValueNotifier<int> seats = ValueNotifier<int>(2);
+
+    final dialogChildren = [
+      Text('Create a car'),
+      Autocomplete<String>(
+        fieldViewBuilder: (textEditingController) {
+          return TextFormField(
+            controller: textEditingController,
+            decoration: const InputDecoration(
+              hintText: 'Car model',
+            ),
+            validator: (value) => suggestions.contains(value)
+                ? null
+                : 'Please select a valid car model',
+            onEditingComplete: () =>
+                _modelNameController.text = textEditingController.text,
+          );
+        },
+        optionsBuilder: (textEditingValue) {
+          return suggestions.where(
+            (element) => element.contains(textEditingValue.text()),
+          );
+        },
+        onSelected: (option) => _modelNameController.text = option,
+      ),
+      TextFormField(
+        controller: _licensePlateController,
+        decoration: const InputDecoration(hintText: 'License plate'),
+        validator: (value) =>
+            value == null || licensePlateRegex.hasMatch(value.toUpperCase())
+                ? null
+                : 'Please enter a valid license plate number',
+      ),
+      Row(
+        children: [
+          const Text('Available seats'),
+          ValueListenableBuilder(
+            valueListenable: seats,
+            builder: (context, value, child) {
+              return IconButton(
+                onPressed: value > 1 ? () => --seats.value : null,
+                icon: const Icon(Icons.remove),
+                iconSize: 30,
+              );
+            },
+          ),
+          ValueListenableBuilder(
+            valueListenable: seats,
+            builder: (context, value, child) => Text('\$value'),
+          ),
+          ValueListenableBuilder(
+            valueListenable: seats,
+            builder: (context, value, child) => IconButton(
+              onPressed: value < 3 ? () => ++seats.value : null,
+              icon: const Icon(Icons.add),
+              iconSize: 30,
+            ),
+          ),
+        ],
+      ),
+      Row(
+        children: [
+          const Text('Choose color'),
+          ColorPickerPopover(colorNotifier: color),
+        ],
+      ),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: const Text('Submit'),
+            onPressed: () async {
+              final modelName = _modelNameController.text;
+              final licensePlate = _licensePlateController.text;
+              Navigator.pop(
+                context,
+                ({
+                  'model': modelName,
+                  'license': licensePlate,
+                  'seats': seats,
+                  'picture': picture.value,
+                  'color': color,
+                }),
+              );
+            },
+          ),
+        ],
+      ),
+    ];
+
+    final car = await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return Column(
+          children: [
+            ValueListenableBuilder(
+              valueListenable: picture,
+              builder: (context, picture, child) {
+                return ImageButton(
+                  imageUrl: picture,
+                  onTap: () async {
+                    final imagePath = await pickImage();
+                    if (imagePath == null) return;
+                    picture.value = imagePath;
+                    color.value = getAverageColor(File(imagePath));
+                  },
+                );
+              },
+            ),
+          ...dialogChildren
+          ]
+        );
+      },
+    );
+
+    if (car != null) {
+      socketConnection.channel.add(
+        jsonEncode({'type': typeAddCar, 'data': car}),
+      );
+    }
+  }
+\end{codeblock}
+
+Όταν η \verb|createCar| καλείται, εμφανίζεται στην οθόνη ένα Dialog το οποίο περιέχει μία φόρμα στην οποία ο χρήστης εισάγει τα στοιχεία του οχήματος.
+Το μοντέλο επιλέγεται ανάμεσα από μία λίστα οχημάτων που εμφανίζονται στον χρήστη μέσω του Autocomplete.
+Αυτό γίνεται όχι μόνο για χάρη διευκόλυνσης του χρήστη, αλλά και για να εξασφαλίσουμε ότι το πεδίο θα περιέχει έγκυρες τιμές.
+Το πεδίο του αριθμού πινακίδας ελέγχει επίσης την εγκυρότητα της τιμής που εισάγει ο χρήστης, συμβάλλοντας στην αποφυγή σφαλμάτων.
+Αν κάποιο από τα παραπάνω δύο πεδία δεν είναι έγκυρο, ο χρήστης ενημερώνεται ώστε να διορθώσει τυχών λάθη.
+Ο χρήστης ενθαρρύνεται επίσης να ανεβάσει μία φωτογραφία του οχήματός του ώστε να διευκολύνει την αναγνώριση του από τους πεζούς.
+Εναλλακτικά, αν δεν διατίθεται φωτογραφία, ο χρήστης έχει τη δυνατότητα να προσδιορίσει το χρώμα του οχήματος επιλέγοντας από μία παλέτα.
+Μόλις ολοκληρωθεί η εισαγωγή των στοιχείων και πατηθεί το κουμπί υποβολής, τα στοιχεία του οχήματος στέλνονται στον server, και αν το όχημα γίνει αποδεκτό τότε προστίθεται στην λίστα οχημάτων του χρήστη.
+
+Παρατηρούμε ότι σε αυτό το κομμάτι κώδικα έχουμε κάνει χρήση του widget \texttt{ValueListenableBuilder} και των \verb|ValueNotifier|.
+Τα widget αυτά εξυπηρετούν παρόμοιο σκοπό με τον Provider και τους ChangeNotifier για τους οποίους κάναμε λόγο προηγουμένως.
+Τα widget τα οποία περικλύονται από έναν ValueListenableBuilder "ακούνε" έναν δεδομένο ValueNotifier, και ενημερώνονται αναλόγως μόλις παρουσιαστούν αλλαγές.
+Έτσι για παράδειγμα το widget που εμφανίζει την εικόνα του οχήματος θα αλλάξει αμέσως μόλις μία νέα εικόνα επιλεγεί από τον χρήστη, αφού ο ValueListenableBuilder ακούει στην μεταβλητή \verb|picture|.
+Ο λόγος που δεν χρησιμοποιούμε Providers και σε αυτή την περίπτωση είναι ότι οι συγκεκριμένες τιμές που θέλουμε να ενημερώνονται (picture, seats, color) είναι περιορισμένες στο widget αυτό, επομένως η χρήση μεμονομένων ValueNotifier όχι μόνο είναι αρκετή για τον σκοπό μας, αλλά απλοποιεί και τον κώδικα.
+
+Το σημαντικότερο κομμάτι για τη λειτουργία της εφαρμογής είναι αυτό που παρακολουθεί το στίγμα του χρήστη και ενημερώνει τον server για της θέση του οχήματος.
+
+\begin{codeblock}{dart}{driver.dart/onPositionChanged}
+  void init(){
+    Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 20,
+        ),
+      ).listen(_onPositionChanged);
+  }
+
+  void _onPositionChanged(Position? coordinates) async {
+    socketConnection.channel.add(
+      jsonEncode({
+        'type': typeUpdateDriver,
+        'data': {
+          'car': user.cars[selectedCar.value],
+          'coordinates': coordinates,
+        },
+      }),
+    );
+    if(passengers.isEmpty) return;
+    if (!arrivedAtBusStop &&
+        Geolocator.distanceBetween(coordinates, busStop) < 100
+        ) {
+      arrivedAtBusStop = true;
+      _showArrivedDialog();
+      return;
+    }
+    if (!arrivedAtUniversity &&
+        Geolocator.distanceBetween(coordinates, university) < 300
+        ) {
+      arrivedAtUniversity = true;
+      _getPassengersStreamSubscription.cancel();
+      positionStream.cancel();
+      socketConnection.channel
+          .add(jsonEncode({'type': typeArrivedDestination, 'data': {}}));
+      await _showFinishDialog(
+        context: context,
+        users: passengers,
+      );
+      Navigator.popUntil(context, (route) => route.isFirst);
+      return;
+    }
+  }
+\end{codeblock}
+
+Το plugin Geolocator μας δίνει πρόσβαση σε ένα stream συντεταγμένων που προέρχονται από το GPS της συσκευής και αντιστοιχούν στο στίγμα του χρήστη.
+Κάθε φορά που ενημερώνεται το στίγμα της συσκευής καλείται η μέθοδος \verb|onPositionChanged|.
+Η onPositionChanged αρχικά στέλνει το νέο στίγμα στον server προκειμένου η πληροφορία αυτή να μεταφερθεί στους πεζούς που παρακολουθούν τον οδηγό.
+Όταν ο οδηγός φτάσει στην στάση λεωφορείου τότε εμφανίζεται το μήνυμα που προτρέπει τον οδηγό να σταματήσει ώστε να επιβιβαστούν οι πεζοί.
+Όταν ο οδηγός φτάσει στην σχολή τότε ενημερώνει τον server και εμφανίζει το παράθυρο αξιολόγησης, πριν επιστρέψει στην αρχική οθόνη.
+
+Μόλις το όχημα φτάσει στον προορισμό του, η μέθοδος \verb|showFinishDialog| εμφανίζει σε οδηγό και επιβάτες ένα Dialog το οποίο τους πληροφορεί για το τέλος της διαδρομής, και τους δίνει την ευκαιρία να αξιολογήσουν ο ένας τον άλλον:
+
+\begin{codeblock}{dart}{showFinishDialog}
+  Future<void> _showFinishDialog({
+    required BuildContext context,
+    required List<User> users,
+  }) async {
+    final socket = context.read<SocketConnection>();
+    List<ValueNotifier<double>> ratings = List.generate(
+      users.length,
+      (index) => ValueNotifier(0),
+    );
+    List<Widget> ratingBars = List.generate(
+      users.length,
+      (index) => ValueListenableBuilder(
+        valueListenable: ratings[index],
+        builder: (context, value, child) {
+          return Row(
+            children: [
+              RatingBar.builder(
+                initialRating: value,
+                minRating: 1,
+                itemBuilder: (context, index) =>
+                    const Icon(Icons.star_rounded, color: Colors.amber),
+                onRatingUpdate: (newRating) {
+                  ratings[index].value = newRating;
+                },
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    final reply = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        content: Column(
+          children: [
+            Text('You have reached your destination!'),
+            Text('Please rate your experience with the passengers (optional)'),
+            ListView.separated(
+              itemCount: users.length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  title: Text(users[index]['full_name']),
+                  leading: UserAvatar(url: users[index]['picture']),
+                  subtitle: ratingBars[index],
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Submit'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+        ]
+      ),
+    );
+
+    if(reply == false) return;
+
+    final ratingList = ratings.map((e) => e.value).toList();
+
+    socket.channel.add(
+      jsonEncode({
+        'type': typeSendRatings,
+        'data': ratingList,
+      }),
+    );
+  }
+\end{codeblock}
+
+Ο χρήστης μπορεί να επιλέξει τον αριθμό αστεριών στο \verb|RatingBar| που αντιστοιχεί στον κάθε επιβάτη, και αφού πατηθεί το κουμπί υποβολής όλες οι τιμές στέλνονται στον server για καταμέτρηση.
+
+
+
+\end{document}

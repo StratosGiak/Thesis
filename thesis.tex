@@ -2,8 +2,8 @@
 \usepackage{graphicx}
 \usepackage[greek]{babel}
 \usepackage{fontspec}
-\usepackage{minted}
-\usepackage{csquotes}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
 \usepackage{subfiles}
 \usepackage{biblatex}
 \usepackage{hyperref}
@@ -11,6 +11,21 @@
 \setmainfont{Times New Roman}
 \graphicspath{{images/}}
 \addbibresource{bibliography.bib}
+\definecolor{bg}{gray}{0.95}
+\tcbset{colback=bg}
+\tcbuselibrary{minted}
+\tcbuselibrary{breakable}
+\newtcblisting{codeblock}[3][]{
+    left=6.5mm,
+    title=#3,
+    breakable,
+    minted language=#2,
+    minted options={linenos, autogobble, breaklines, fontsize=\footnotesize}
+    #1,
+    listing only
+    }
+\usepackage{csquotes}
+
 
 \title{
     {Διαδικτυακή εφαρμογή για τον δυναμικό συνεπιβατισμό μεταφορικών μέσων}\\
