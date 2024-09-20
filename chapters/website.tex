@@ -1,0 +1,169 @@
+\documentclass[../thesis.tex]{subfiles}
+
+\begin{document}
+
+Η εφαρμογή μας συνοδεύεται από μία ιστοσελίδα που περιέχει συμπληρωματικές πληροφορίες όπως τους όρους χρήσης και την πολιτική απορρήτου, και η οποία επιτρέπει στους χρήστες να δουν τις λεπτομέρειες του λογαριασμού τους αλλά και να διαγράψουν τα αποθηκευμένα στοιχεία τους.
+Επομένως, εκτός από τους servers που αναλύσαμε στο κύριο μέρος οι οποίοι είναι απαραίτητοι για τη λειτουργία της εφαρμογής, διαθέτουμε και έναν ακόμα ανεξάρτητο web server που είναι υπεύθυνος για την ιστοσελίδα αυτή.
+
+Ο server χρησιμοποιεί το framework Express.js, το πιο ευρέως διαδεδομένο framework για τη δημιουργία web εφαρμογών μέσω του Node.js.
+Οι στατικές σελίδες παρέχονται απευθείας από το Nginx και δεν παρουσιάζουν ιδιαίτερο ενδιαφέρον.
+Επομένως, θα αναλύσουμε το μέρος της ιστοσελίδας που είναι δυναμικό, δηλαδή τις σελίδες που αφορούν το προφίλ του χρήστη.
+Η χρήση του Express.js βασίζεται στο αντικείμενο \verb|app| το οποίο περιέχει όλο το API του framework, και μέσω του οποίου ορίζουμε τη συμπεριφορά της εφαρμογής.
+Το παρακάτω μέρος του κώδικα ορίζει τη συμπεριφορά της εφαρμογής όταν ο χρήστης μεταβεί στη σελίδα του προφίλ του (GET request στο relative URL \verb|/profile|).
+Εφόσον η σελίδα αυτή δεν είναι ίδια για τον κάθε χρήστη, ο server χρειάζεται να ξέρει την ταυτότητα του ατόμου προκειμένου να στείλει τη σωστή σελίδα με τα στοιχεία του.
+Έτσι ο server πραγματοποιεί πρώτα το authentication του χρήστη, και αφού διαπιστώσει την ταυτότητά του προσπελάζει τη βάση δεδομένων για να συμπληρώσει τη σελίδα με τα κατάλληλα στοιχεία.
+Όταν ο server ταυτοποιήσει έναν χρήστη αποθηκεύει τον ΑΜ του στο αντίστοιχο session, έτσι ώστε περαιτέρω αιτήματα στη σελίδα προφίλ να μην απαιτούν ξανά την ταυτοποίηση του χρήση, τουλάχιστον μέχρι ο χρήστης να τερματίσει το session κλείνοντας τον browser του.
+
+\begin{codeblock}
+  const app = express();
+
+  app.get("/profile", async (req, res) => {
+    if (!req.session.userId) {
+      res.redirect("/auth");
+      return;
+    }
+    let user = await getUser(req.session.userId);
+    if (!user) {
+      res.status(500).redirect("/");
+      return;
+    }
+
+    const csrfSecret = await CSRF.secret();
+    const csrfToken = CSRF.create(csrfSecret);
+    req.session.csrfSecret = csrfSecret;
+
+    res.render("profile", {
+      id: user.id,
+      name: user.full_name,
+      cars: user.cars,
+      ratings_count: user.ratings_count,
+      ratings_sum: user.ratings_sum,
+      picture: user.picture,
+      csrfToken: csrfToken,
+    });
+  });
+\end{codeblock}
+
+Έτσι λοιπόν βλέπουμε ότι όταν ο χρήστης μεταβεί στη σελίδα \verb|profile| ελέγχουμε αρχικά αν υπάρχει ήδη session, και αν όχι τότε οδηγούμε τον χρήστη στη σελίδα ταυτοποίησης \verb|auth|.
+Αν ο χρήστης είναι ταυτοποιημένος τότε μέσω της \verb|getUser| διαβάζουμε όλα τα στοιχεία του από τη βάση, και έπειτα στέλνουμε τη συμπληρωμένη σελίδα προφίλ μέσω της συνάρτησης \verb|render|.
+Ότι αναφέρεται σε CSRF έχει να κάνει με τη μέθοδο προστασίας έναντι του Cross-site request forgery μέσω της χρήσης CSRF token.\footnote{Συγκεκριμένα το CSRF token χρησιμοποιείται για τη δράση του κουμπιού διαγραφής λογαριασμού. Το πάτημα το κουμπιού διαγραφής στέλνει απλά ένα POST request στο κατάλληλο route της εφαρμογής που εκτελεί τη διαγραφή του χρήστη από τη βάση δεδομένων. Σε αυτή την περίπτωση μία κακόβουλη ιστοσελίδα μπορεί πολύ εύκολα να στείλει το ίδιο ακριβώς request εκ μέρους του χρήστη και εν αγνοία του να διαγράψει τον λογαριασμό του. Η λύση είναι η συμπερίληψη ενός randomly generated token στην ιστοσελίδα μας, το οποίο θα στέλνεται μαζί με το POST request και θα επαληθεύεται πριν την εκτέλεση της διαγραφής. Καθώς μία ξένη ιστοσελίδα δεν μπορεί με κανένα τρόπο να γνωρίζει το token αυτό, δεν είναι ικανή να στείλει ένα έγκυρο αίτημα διαγραφής του χρήστη, οπότε προστατευόμαστε έναντι του CSRF.}
+
+Ακολουθεί ο χειρισμός του authentication:
+
+\begin{codeblock}{typescript}{website.ts}
+  const myIssuer = await Issuer.discover(env.ISSUER);
+
+  const oidcClient = new myIssuer.Client({
+    client_id: env.WEB_CLIENT_ID,
+    client_secret: env.WEB_CLIENT_SECRET,
+    redirect_uris: [env.WEB_REDIRECT_URI],
+    response_types: ["code"],
+  });
+
+  app.get("/auth", (req, res) => {
+    req.session.codeVerifier = generators.codeVerifier();
+    const code_challenge = generators.codeChallenge(req.session.codeVerifier);
+    const authUrl =
+      oidcClient.authorizationUrl({
+        scope: "openid profile email",
+        code_challenge: code_challenge,
+        code_challenge_method: "S256",
+      }) + "&kc_idp_hint=saml";
+    res.redirect(authUrl);
+  });
+
+  app.get("/auth/cb", async (req, res) => {
+    const params = oidcClient.callbackParams(req);
+    try {
+      const tokenSet = await oidcClient.callback(env.WEB_REDIRECT_URI, params, {
+        code_verifier: req.session.codeVerifier,
+      });
+      if (!tokenSet.claims().id) {
+        res.status(401).redirect("/");
+        return;
+      }
+      req.session.idToken = tokenSet.id_token;
+      req.session.userId = tokenSet.claims().id;
+      res.redirect("/profile");
+    } catch (error) {
+      res.status(401).redirect("/");
+    }
+  });
+\end{codeblock}
+
+Αρχικά δημιουργούμε τον OpenID Client που θα είναι μέρος του server μας εισάγοντας τα στοιχεία που ορίσαμε κατά την εγγραφή στον OpenID Provider του Keycloak.
+Όπως είδαμε προηγουμένως, όταν απαιτείται η ταυτοποίηση ενός χρήστη μεταβαίνουμε στο route \verb|/auth|.
+Από εκεί κάνουμε redirect τον χρήστη στο URL του provider όπου θα πραγματοποιηθεί η ταυτοποίηση, περνώντας το λεγόμενο code challenge που είναι κρίσιμο για τη λειτουργία του PKCE.
+Μόλις η ταυτοποίηση ολοκληρωθεί, ο OpenID provider κάνει redirect τον χρήστη στο URL \verb|/auth/cb| της ιστοσελίδας μας, συμπεριλαμβάνοντας μία σειρά από παραμέτρους στο URL, και ο server μπορεί χρησιμοποιώντας αυτές τις παραμέτρους να ζητήσει το ID token του χρήστη μέσω POST request στον OpenID provider.
+Το ID token αποθηκεύεται στο session του χρήστη, και ο χρήστης μεταβαίνει τελικά στη σελίδα προφίλ του.
+
+Τέλος, έχουμε τις δύο δράσεις της σελίδας προφίλ, την αποσύνδεση και τη διαγραφή λογαριασμού:
+
+\begin{codeblock}{typescript}{website.ts}
+  app.post("/profile/logout", (req, res) => {
+    const logoutUrl = oidcClient.endSessionUrl({
+      post_logout_redirect_uri: env.WEB_LOGOUT_REDIRECT_URI,
+      id_token_hint: req.session.idToken,
+    });
+    res.redirect(logoutUrl);
+    req.session.destroy((err) => {
+      if (err) loggerMain.error(err);
+    });
+  });
+
+  app.post("/profile/delete", async (req, res) => {
+    if (
+      !req.session.csrfSecret ||
+      !CSRF.verify(req.session.csrfSecret, req.body.csrf)
+    ) {
+      res.status(403).send();
+      return;
+    }
+    if (!req.session.userId) {
+      res.status(401).send();
+      return;
+    }
+    await removeUser(req.session.userId);
+    res.redirect("/profile/logout");
+  });
+\end{codeblock}
+
+Κατά την αποσύνδεση, ο server απλά οδηγεί τον χρήστη στο κατάλληλο URL του OpenID provider το οποίο θα τον αποσυνδέσει από τον λογαριασμό του, και έπειτα καταστρέφει το αντίστοιχο session.
+Όσον αφορά τη διαγραφή, αφού επαληθεύσουμε πρώτα το CSRF token, διαγράφουμε τον χρήστη από τη βάση δεδομένων και προχωράμε στην αποσύνδεση.
+
+
+Για την υλοποίηση των sessions χρησιμοποιούμε τη NoSQL βάση δεδομένων Redis.
+Το κάθε session αποθηκεύεται ως ένα key-value pair, με το session ID να χρησιμοποιείται ως key και το αντίστοιχο session cookie ως value.
+
+Για την κατασκευή της δυναμικής σελίδας προφίλ χρησιμοποιούμε τον template engine EJS.
+
+\begin{codeblock}{typescript}{website.ts}
+  declare module "express-session" {
+    export interface SessionData {
+      codeVerifier: string;
+      csrfSecret: string;
+      idToken: string;
+      userId: string;
+    }
+  }
+
+  let redisClient = createClient();
+  redisClient.connect().catch(loggerMain.error);
+  let redisStore = new RedisStore({ client: redisClient, prefix: "ridehailing" });
+
+  app.use(
+    session({
+      store: redisStore,
+      secret: env.SESSION_SECRET,
+      resave: false,
+      saveUninitialized: true,
+      cookie: { secure: true, httpOnly: true, sameSite: "strict" },
+    })
+  );
+
+  app.set("view engine", "ejs");
+  app.engine("html", ejs.renderFile);
+  app.set("views", "./views");
+\end{codeblock}
+
+\end{document}
