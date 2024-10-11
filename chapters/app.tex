@@ -43,7 +43,31 @@
 Σε περίπτωση που ο οδηγός αποχωρήσει μην έχοντας λάβει τον πεζό, η συνεδρία τους ακυρώνεται και η εφαρμογή του πεζού συνεχίζει να αναζητά άλλους οδηγούς.
 Η εφαρμογή παρακολουθεί την πορεία του οχήματος προς τη σχολή, και μόλις αυτό φτάσει στον προορισμό του, τερματίζει τη διαδρομή και δίνει την επιλογή σε οδηγό και πεζό να αξιολογήσουν ο ένας τον άλλο.
 
-\section*{Παρουσίαση κώδικα}
+\begin{figure}
+    \vspace*{-3cm}
+    \centering
+    \subcaptionbox{Η αρχική οθόνη της εφαρμογής αφού ο χρήστης έχει συνδεθεί.}[0.45\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_welcome.png}}
+    \hfill
+    \subcaptionbox{Η οθόνη επιλογής οχήματος του οδηγού.}[0.45\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_car_list.png}}
+    \par\bigskip
+    \subcaptionbox{Η οθόνη τροποποίησης ενός οχήματος.}[0.45\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_car_edit.png}}
+    \hfill
+    \subcaptionbox{Η οθόνη όσο ο οδηγός αναμένει την εμφάνιση πεζού.}[0.45\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_waiting.png}}
+\end{figure}
+
+\begin{figure}\ContinuedFloat
+    \vspace*{-3cm}
+    \subcaptionbox{Η οθόνη του πεζού όταν ερωτάται για την αποδοχή του οδηγού.}[0.45\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_accept.png}}
+    \hfill
+    \subcaptionbox{Η οθόνη του χάρτη κατά τη διάρκεια της διαδρομής.}[0.45\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_map.png}}
+    \par\bigskip
+    \subcaptionbox{Η τελική οθόνη αξιόλογησης του οδηγού.}[\textwidth]{\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{app_end.png}}
+    \caption{Μερικές από τις οθόνες της εφαρμογής}
+\end{figure}
+
+\newpage
+
+\section{Παρουσίαση κώδικα}
 \subfile{./app_code.tex}
 
 \end{document}
