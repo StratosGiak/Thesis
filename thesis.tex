@@ -1,14 +1,18 @@
-\documentclass{report}
+\documentclass[a4paper, 11pt]{report}
 \usepackage{graphicx}
 \usepackage[greek]{babel}
-\usepackage{fontspec}
+\usepackage[Greek, Latin]{ucharclasses}
+\usepackage{xltxtra, xgreek}
 \usepackage{xcolor}
 \usepackage{tcolorbox}
 \usepackage{subfiles}
-\usepackage{biblatex}
+\usepackage[sorting=none]{biblatex}
 \usepackage{hyperref}
-\usepackage{todonotes}
-\setmainfont{Times New Roman}
+\usepackage{afterpage}
+\usepackage{setspace}
+\onehalfspacing
+\setTransitionsForGreek{\setlanguage{greek}}{\setlanguage{american}}
+\setmainfont[Kerning=On,Mapping=tex-text]{Linux Libertine O}
 \graphicspath{{images/}}
 \addbibresource{bibliography.bib}
 \definecolor{bg}{gray}{0.95}
@@ -20,7 +24,7 @@
     title=#3,
     breakable,
     minted language=#2,
-    minted options={linenos, autogobble, breaklines, fontsize=\footnotesize}
+    minted options={linenos, autogobble, breaklines, fontsize=\footnotesize, baselinestretch=1}
     #1,
     listing only
     }
