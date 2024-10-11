@@ -29,16 +29,27 @@
     listing only
     }
 \usepackage{csquotes}
-
+\usepackage{subcaption}
+\captionsetup[subfigure]{
+    font=footnotesize,
+    labelfont=up,
+    justification=centering
+    }
+\newcommand\blankpage{%
+    \null
+    \thispagestyle{empty}%
+    \newpage
+    }
 
 \title{
-    {Διαδικτυακή εφαρμογή για τον δυναμικό συνεπιβατισμό μεταφορικών μέσων}\\
-    {\large Εθνικό Μετσόβιο Πολυτεχνείο}
+    {Διαδικτυακή εφαρμογή για τον δυναμικό συνεπιβατισμό μεταφορικών μέσων}
 }
 \author{Ευστράτιος Γιακουμάκης}
-\date{1η Σεπτεμβρίου 2024}
+\date{10η Οκτωβρίου 2024}
 
 \begin{document}
+
+\maketitle
 
 \begin{abstract}\thispagestyle{plain}
     Εδώ και πολλά χρόνια έχει παρατηρηθεί το φαινόμενο οι φοιτητές που προσέρχονται στην Πολυτεχνειούπολη του Εθνικού Μετσοβίου Πολυτεχνείου μέσω των συγκοινωνιών να συγκεντρώνονται σε ορισμένες κομβικές στάσεις, οδηγώντας σε συνωστισμό και διαταράσσοντας τη γύρω κυκλοφορία.
@@ -60,32 +71,47 @@
 
 \tableofcontents
 
+\afterpage{\blankpage}
+
 \chapter{Εισαγωγή}
 \subfile{chapters/intro.tex}
 
-\chapter{Flutter}
+\afterpage{\blankpage}
+
+\chapter[Flutter]{Flutter\footnote{Πηγή για τις πληροφορίες του κεφαλαίου αποτελούν τα επίσημα docs του Flutter \cite{flutter_architecture, flutter_inside} εκτός όπου αναγράφεται διαφορετικά}}
 \subfile{chapters/flutter.tex}
 
-\chapter{JavaScript}
-\subfile{chapters/javascript.tex}
+\afterpage{\blankpage}
 
 \chapter{Node.js}
 \subfile{chapters/node.tex}
 
+\afterpage{\blankpage}
+
 \chapter{WebSocket}
 \subfile{chapters/websocket.tex}
+
+\afterpage{\blankpage}
 
 \chapter{Frontend}
 \subfile{chapters/app.tex}
 
+\afterpage{\blankpage}
+
 \chapter{Backend}
 \subfile{chapters/server.tex}
+
+\afterpage{\blankpage}
+
 \chapter{Συμπεράσματα}
 \subfile{chapters/conclusion.tex}
 
+\afterpage{\blankpage}
+
 \appendix
-\chapter{Συμπληρωματικό υλικό}
 \subfile{chapters/appendix.tex}
+
+\afterpage{\blankpage}
 
 \printbibliography
 
